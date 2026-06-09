@@ -26,6 +26,8 @@ strategy:
     skip_minutes_before_close: 30 # 大引け(15:30)前30分＝15:00以降は新規見送り
     min_vwap_diff_pct: 0.1        # VWAPを0.1%以上上抜け/下抜けで有効（微小なダマシを除外）
     allow_short: true             # 空売り(VWAP下抜け+直近安値更新)を許可
+    use_trend_filter: true        # 日足トレンドに沿う方向のみ（強い→買い/弱い→売り）
+    trend_ma_days: 25             # トレンド判定の日足移動平均（日数）
     ma_period: 25                 # 移動平均の期間（参考表示用）
     take_profit_pct: 0.8          # 利確 +0.8%
     stop_loss_pct: 0.5            # 損切り -0.5%

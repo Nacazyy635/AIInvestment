@@ -32,6 +32,10 @@ class DataFeed(ABC):
         """複数営業日にまたがる分足を返す（バックテスト用）。対応しない実装もある。"""
         raise NotImplementedError
 
+    def get_daily(self, symbol: str, period_days: int = 120) -> pd.DataFrame:
+        """日足を返す（トレンド判定用）。対応しない実装もある。"""
+        raise NotImplementedError
+
 
 class YFinanceFeed(DataFeed):
     """yfinance による遅延データ取得（Mac・開発／Step1-2用）。
@@ -67,3 +71,15 @@ class YFinanceFeed(DataFeed):
         # 最新の1営業日だけを使う（VWAPは日次でリセットするため）
         last_day = df.index[-1].date()
         return df[df.index.date == last_day]
+
+    def get_daily(self, symbol: str, period_days: int = 120) -> pd.DataFrame:
+        import yfinance as yf
+
+        df = yf.Ticker(symbol).history(period=f"{period_days}d", interval="1d", auto_adjust=False)
+        if df.empty:
+            logger.warning("日足が空: %s", symbol)
+            return pd.DataFrame(columns=REQUIRED_COLUMNS)
+        df = df.rename(columns=str.lower)[REQUIRED_COLUMNS]
+        if df.index.tz is not None:
+            df.index = df.index.tz_convert(self.tz)
+        return df
