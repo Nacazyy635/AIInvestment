@@ -1,0 +1,43 @@
+# ===== 自動デイトレ監視システム 設定 =====
+# コードを変えずに挙動を調整するための設定ファイル（仕様§5.2：数値は外出し）。
+
+# 監視銘柄（低位・高流動・業種分散で選定。実価格はツールが表示）
+watchlist:
+  - { symbol: "7201.T", name: "日産自動車" }
+  - { symbol: "8604.T", name: "野村HD" }
+  - { symbol: "9501.T", name: "東京電力HD" }
+  - { symbol: "4385.T", name: "メルカリ" }
+  - { symbol: "8306.T", name: "三菱UFJ" }
+
+# データ取得（Step1はyfinanceの遅延データ。本番でkabuに差し替える）
+datafeed:
+  provider: yfinance
+  interval: "1m"        # 1分足
+  lookback_days: 2      # 直近2営業日を取得し、最新1営業日でVWAP計算
+
+# 戦略：VWAP順張り（買いのみ）。数値はバックテスト/仮想売買で調整する初期値。
+strategy:
+  name: vwap_breakout
+  params:
+    volume_factor: 1.5          # 出来高が直近平均の1.5倍以上で「増加」とみなす
+    volume_window: 20           # 出来高移動平均の本数
+    recent_high_window: 20      # 直近20本の高値を更新したらブレイク
+    skip_minutes_after_open: 5  # 寄り後5分は板寄せ回避で見送り
+    ma_period: 25               # 移動平均の期間（参考表示用）
+
+# 東証の取引時間（2024/11/5以降。後場は15:30まで）
+market:
+  timezone: "Asia/Tokyo"
+  open: "09:00"
+  morning_close: "11:30"
+  afternoon_open: "12:30"
+  close: "15:30"
+
+# 監視の動作
+monitor:
+  poll_interval_sec: 30   # loopモードでの再スキャン間隔（秒）
+  mode: "once"            # once=1回スキャン / loop=繰り返し
+
+# 通知（auto=Discord URLがあればDiscord、なければコンソール）
+notify:
+  provider: auto

@@ -1,0 +1,78 @@
+"""設定の読み込みと検証。
+
+config.yaml（挙動の設定）と .env（秘密情報）を分離し、
+pydantic で型・既定値・バリデーションを一元管理する。
+不正な設定は起動時に例外で弾ける＝トレード中の事故を減らす。
+"""
+import os
+from pathlib import Path
+from typing import List, Literal, Optional, Union
+
+import yaml
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field
+
+
+class SymbolConfig(BaseModel):
+    symbol: str
+    name: str = ""
+
+
+class DataFeedConfig(BaseModel):
+    provider: Literal["yfinance"] = "yfinance"
+    interval: str = "1m"
+    lookback_days: int = 2
+
+
+class StrategyParams(BaseModel):
+    volume_factor: float = 1.5
+    volume_window: int = 20
+    recent_high_window: int = 20
+    skip_minutes_after_open: int = 5
+    ma_period: int = 25
+
+
+class StrategyConfig(BaseModel):
+    name: str = "vwap_breakout"
+    params: StrategyParams = Field(default_factory=StrategyParams)
+
+
+class MarketConfig(BaseModel):
+    timezone: str = "Asia/Tokyo"
+    open: str = "09:00"
+    morning_close: str = "11:30"
+    afternoon_open: str = "12:30"
+    close: str = "15:30"
+
+
+class MonitorConfig(BaseModel):
+    poll_interval_sec: int = 30
+    mode: Literal["once", "loop"] = "once"
+
+
+class NotifyConfig(BaseModel):
+    provider: Literal["auto", "discord", "console"] = "auto"
+
+
+class AppConfig(BaseModel):
+    """アプリ全体の設定。"""
+    watchlist: List[SymbolConfig]
+    datafeed: DataFeedConfig = Field(default_factory=DataFeedConfig)
+    strategy: StrategyConfig = Field(default_factory=StrategyConfig)
+    market: MarketConfig = Field(default_factory=MarketConfig)
+    monitor: MonitorConfig = Field(default_factory=MonitorConfig)
+    notify: NotifyConfig = Field(default_factory=NotifyConfig)
+
+    # .env 由来（設定ファイルには書かない秘密情報）
+    discord_webhook_url: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+
+
+def load_config(path: Union[str, Path] = "config.yaml") -> AppConfig:
+    """config.yaml + .env を読み込み、検証済みの AppConfig を返す。"""
+    load_dotenv()  # .env を環境変数へ取り込む
+    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    cfg = AppConfig(**raw)
+    cfg.discord_webhook_url = os.getenv("DISCORD_WEBHOOK_URL") or None
+    cfg.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or None
+    return cfg

@@ -1,0 +1,7 @@
+# Step1（監視システム）の依存。Mac/Windows共通で動くものだけ。
+yfinance>=0.2.40      # 遅延の市場データ取得（開発用）
+pandas>=2.0           # 時系列・指標計算
+pydantic>=2.5         # 設定の検証（型安全）
+PyYAML>=6.0           # config.yaml 読み込み
+python-dotenv>=1.0    # .env 読み込み
+requests>=2.31        # Discord Webhook 送信

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# 秘密情報（絶対にコミットしない）
+.env
+
+# データ・ログ（各PCローカル。仕様§6.2：DBはエンジンと同じPCのローカルファイル）
+*.db
+*.sqlite
+*.sqlite3
+data/
+logs/
+*.log
+
+# OS
+.DS_Store
