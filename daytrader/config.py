@@ -69,6 +69,12 @@ class TradeConfig(BaseModel):
     db_path: str = "data/daytrader.db"              # SQLite（gitignore対象）
 
 
+class BacktestConfig(BaseModel):
+    """複数日バックテストの設定（Step2）。"""
+    interval: str = "5m"   # yfinance制約: 1m≈7日 / 5m・2m≈60日
+    days: int = 30         # 直近何日分（カレンダー日。≈20営業日）
+
+
 class AppConfig(BaseModel):
     """アプリ全体の設定。"""
     watchlist: List[SymbolConfig]
@@ -78,6 +84,7 @@ class AppConfig(BaseModel):
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
     trade: TradeConfig = Field(default_factory=TradeConfig)
+    backtest: BacktestConfig = Field(default_factory=BacktestConfig)
 
     # .env 由来（設定ファイルには書かない秘密情報）
     discord_webhook_url: Optional[str] = None

@@ -42,13 +42,19 @@ class Storage:
         self.conn.executescript(_SCHEMA)
         self.conn.commit()
 
-    def replace_day(self, session_date: str, mode: str, trades: List[Trade]) -> None:
-        """同一(日付, モード)の既存行を入れ替える（再実行で重複しないように）。"""
+    def save(self, mode: str, trades: List[Trade]) -> None:
+        """トレードを保存する。
+
+        各トレードの entry_ts から session_date を導出し、
+        同一 (session_date, mode) の既存行を入れ替える
+        （バックテストを再実行しても重複しないように）。
+        """
+        if not trades:
+            return
+        dates = sorted({t.entry_ts.date().isoformat() for t in trades})
         cur = self.conn.cursor()
-        cur.execute(
-            "DELETE FROM trades WHERE mode = ? AND session_date = ?",
-            (mode, session_date),
-        )
+        for d in dates:
+            cur.execute("DELETE FROM trades WHERE mode = ? AND session_date = ?", (mode, d))
         cur.executemany(
             """
             INSERT INTO trades
@@ -59,7 +65,7 @@ class Storage:
             """,
             [
                 (
-                    t.symbol, t.name, t.strategy_id, mode, session_date, t.qty,
+                    t.symbol, t.name, t.strategy_id, mode, t.entry_ts.date().isoformat(), t.qty,
                     t.entry_ts.isoformat(), t.entry_price, t.exit_ts.isoformat(), t.exit_price,
                     t.pnl, t.pnl_pct, t.reason_open, t.reason_close,
                 )

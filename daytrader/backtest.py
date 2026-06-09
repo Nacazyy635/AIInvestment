@@ -1,7 +1,8 @@
 """仮想売買バックテスト（Step2）。
 
-最新営業日の1分足を頭から再生し、シグナルで建玉 → エグジット規則で決済、を行い、
-完結トレードと損益を SQLite に記録する。
+最新の数営業日（複数日）の分足を取得し、日ごとにセッションを再生して
+「シグナルで建玉 → エグジット規則で決済」を行い、完結トレードと損益を
+SQLite に記録・集計する。
 
 簡易化（次段階で精緻化）:
   - エントリーは「シグナル足の終値」で約定
@@ -11,6 +12,7 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter, defaultdict
 from datetime import datetime, time
 from typing import List, Optional
 
@@ -18,9 +20,10 @@ import pandas as pd
 
 from .broker import PaperBroker
 from .config import AppConfig
+from .datafeed import YFinanceFeed
 from .exits import check_exit
 from .models import ExitReason, Position, Trade
-from .monitor import build_feed, build_strategy
+from .monitor import build_strategy
 from .storage import Storage
 from .strategy import _hhmm_to_min
 
@@ -101,15 +104,17 @@ class SessionBacktester:
 
 
 def run_backtest(cfg: AppConfig) -> None:
-    """ウォッチリスト全銘柄をバックテストし、SQLiteへ保存して結果を表示する。"""
-    feed = build_feed(cfg)
+    """ウォッチリスト全銘柄を複数日バックテストし、SQLiteへ保存して結果を表示する。"""
+    bt = cfg.backtest
+    feed = YFinanceFeed(interval=bt.interval, lookback_days=bt.days, tz=cfg.market.timezone)
     storage = Storage(cfg.trade.db_path)
+
     all_trades: List[Trade] = []
-    session_date: Optional[str] = None
+    sessions = set()
 
     for sym in cfg.watchlist:
         try:
-            df = feed.get_intraday(sym.symbol)
+            df = feed.get_history(sym.symbol, bt.interval, bt.days)
         except Exception as e:
             logger.error("データ取得失敗 %s: %s", sym.symbol, e)
             continue
@@ -117,36 +122,64 @@ def run_backtest(cfg: AppConfig) -> None:
             logger.info("データなし: %s", sym.symbol)
             continue
 
-        session_date = df.index[-1].date().isoformat()
-        bt = SessionBacktester(cfg, PaperBroker())
-        trades = bt.run_symbol(sym.symbol, sym.name, df)
-        all_trades.extend(trades)
-        for t in trades:
-            logger.info(
-                "取引 %-7s %-8s %s→%s %-12s entry=%8.1f exit=%8.1f 損益=%+8.0f円(%+.2f%%)",
-                t.symbol, t.name, t.entry_ts.strftime("%H:%M"), t.exit_ts.strftime("%H:%M"),
-                t.reason_close, t.entry_price, t.exit_price, t.pnl, t.pnl_pct,
-            )
+        # 日ごとに区切って再生（VWAP等は日次でリセットされる）
+        sym_trades: List[Trade] = []
+        for day, day_df in df.groupby(df.index.date):
+            sessions.add(day)
+            bt_engine = SessionBacktester(cfg, PaperBroker())
+            sym_trades.extend(bt_engine.run_symbol(sym.symbol, sym.name, day_df))
 
-    if session_date is not None:
-        storage.replace_day(session_date, cfg.trade.mode, all_trades)
+        all_trades.extend(sym_trades)
+        wins = sum(1 for t in sym_trades if t.pnl > 0)
+        pnl = sum(t.pnl for t in sym_trades)
+        logger.info(
+            "%-7s %-8s 取引%3d 勝ち%3d 損益%+10.0f円",
+            sym.symbol, sym.name, len(sym_trades), wins, pnl,
+        )
+
+    if all_trades:
+        storage.save(cfg.trade.mode, all_trades)
         logger.info("SQLite保存: %s（%d件, mode=%s）", cfg.trade.db_path, len(all_trades), cfg.trade.mode)
-    _print_summary(all_trades, session_date, cfg.trade.mode)
+    _print_summary(all_trades, sessions, cfg)
     storage.close()
 
 
-def _print_summary(trades: List[Trade], session_date: Optional[str], mode: str) -> None:
+def _print_summary(trades: List[Trade], sessions, cfg: AppConfig) -> None:
     n = len(trades)
     wins = [t for t in trades if t.pnl > 0]
     total = sum(t.pnl for t in trades)
     win_rate = (len(wins) / n * 100.0) if n else 0.0
     avg = (total / n) if n else 0.0
-    line = "=" * 54
+    gross_win = sum(t.pnl for t in wins)
+    gross_loss = -sum(t.pnl for t in trades if t.pnl <= 0)
+    pf = (gross_win / gross_loss) if gross_loss > 0 else float("inf")
+    reason_ct = Counter(t.reason_close for t in trades)
+
+    byday_pnl: dict = defaultdict(float)
+    byday_n: dict = defaultdict(int)
+    for t in trades:
+        d = t.entry_ts.date().isoformat()
+        byday_pnl[d] += t.pnl
+        byday_n[d] += 1
+
+    line = "=" * 62
     print("\n" + line)
-    print(f" バックテスト結果  {session_date}  mode={mode}")
+    print(f" バックテスト結果   mode={cfg.trade.mode}")
+    print(f" 対象 {cfg.backtest.days}日（{len(sessions)}営業日）× {len(cfg.watchlist)}銘柄   足={cfg.backtest.interval}")
     print(line)
     print(f" 取引数 : {n}")
-    print(f" 勝ち   : {len(wins)}   負け: {n - len(wins)}   勝率: {win_rate:.1f}%")
-    print(f" 合計損益: {total:+,.0f} 円   平均: {avg:+,.0f} 円/取引")
+    print(f" 勝率   : {win_rate:5.1f}%   （勝ち {len(wins)} / 負け {n - len(wins)}）")
+    print(f" 合計損益: {total:+,.0f} 円    平均: {avg:+,.0f} 円/取引")
+    if n:
+        pf_str = "∞" if pf == float("inf") else f"{pf:.2f}"
+        print(f" PF(総利益/総損失): {pf_str}")
+        print(" 決済理由: " + " / ".join(f"{k}={v}" for k, v in reason_ct.most_common()))
     print(line)
-    print(" ※手数料・スリッページ未考慮（次段階で反映）")
+    if byday_pnl:
+        print(" 日別損益（累計）:")
+        cum = 0.0
+        for d in sorted(byday_pnl):
+            cum += byday_pnl[d]
+            print(f"   {d}  取引{byday_n[d]:2d}  損益{byday_pnl[d]:+8.0f}  累計{cum:+9.0f}")
+        print(line)
+    print(" ※5分足・手数料/スリッページ未考慮。窓は本数基準なので1m足のライブとは時間スケールが異なる")

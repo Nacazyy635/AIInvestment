@@ -54,3 +54,8 @@ trade:
   max_round_trips_per_symbol: 1  # 同一銘柄は1日1往復まで（現物・差金決済規制）
   forced_close_buffer_min: 5     # 大引け(15:30)の5分前に強制決済
   db_path: data/daytrader.db     # SQLite（gitignore対象）
+
+# 複数日バックテスト（Step2）
+backtest:
+  interval: "5m"   # yfinance制約: 1m=約7日 / 5m・2m=約60日分まで
+  days: 30         # 直近何日分（カレンダー日。≈20営業日）
