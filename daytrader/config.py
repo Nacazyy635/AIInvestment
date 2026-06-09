@@ -28,7 +28,9 @@ class StrategyParams(BaseModel):
     volume_factor: float = 1.5
     volume_window: int = 20
     recent_high_window: int = 20
-    skip_minutes_after_open: int = 5
+    skip_minutes_after_open: int = 5       # 寄り付き直後（前場・後場とも）を除外する分数
+    skip_minutes_before_close: int = 30    # 大引け前を除外する分数（強制決済までの猶予）
+    min_vwap_diff_pct: float = 0.1         # VWAPからの最低乖離率(%)。微小なダマシ上抜けを除外
     ma_period: int = 25
 
 

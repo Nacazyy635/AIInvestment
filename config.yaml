@@ -19,11 +19,13 @@ datafeed:
 strategy:
   name: vwap_breakout
   params:
-    volume_factor: 1.5          # 出来高が直近平均の1.5倍以上で「増加」とみなす
-    volume_window: 20           # 出来高移動平均の本数
-    recent_high_window: 20      # 直近20本の高値を更新したらブレイク
-    skip_minutes_after_open: 5  # 寄り後5分は板寄せ回避で見送り
-    ma_period: 25               # 移動平均の期間（参考表示用）
+    volume_factor: 1.5            # 出来高が直近平均の1.5倍以上で「増加」とみなす
+    volume_window: 20             # 出来高移動平均の本数
+    recent_high_window: 20        # 直近20本の高値を更新したらブレイク
+    skip_minutes_after_open: 5    # 寄り付き直後（前場9:00・後場12:30）から5分は見送り
+    skip_minutes_before_close: 30 # 大引け(15:30)前30分＝15:00以降は新規見送り
+    min_vwap_diff_pct: 0.1        # VWAPを0.1%以上上抜けたら有効（微小なダマシを除外）
+    ma_period: 25                 # 移動平均の期間（参考表示用）
 
 # 東証の取引時間（2024/11/5以降。後場は15:30まで）
 market:

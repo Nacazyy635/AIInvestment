@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 import time as time_mod
-from datetime import time
 
 from .config import AppConfig
 from .datafeed import DataFeed, YFinanceFeed
@@ -16,11 +15,6 @@ from .notifier import Notifier, build_notifier
 from .strategy import Strategy, VwapBreakoutStrategy
 
 logger = logging.getLogger(__name__)
-
-
-def _parse_hhmm(s: str) -> time:
-    h, m = s.split(":")
-    return time(int(h), int(m))
 
 
 def build_feed(cfg: AppConfig) -> DataFeed:
@@ -32,11 +26,7 @@ def build_feed(cfg: AppConfig) -> DataFeed:
 
 
 def build_strategy(cfg: AppConfig) -> Strategy:
-    return VwapBreakoutStrategy(
-        params=cfg.strategy.params,
-        market_open=_parse_hhmm(cfg.market.open),
-        skip_minutes=cfg.strategy.params.skip_minutes_after_open,
-    )
+    return VwapBreakoutStrategy(params=cfg.strategy.params, market=cfg.market)
 
 
 class Monitor:
