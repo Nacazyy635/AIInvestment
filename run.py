@@ -13,7 +13,7 @@ import logging
 from datetime import datetime
 
 from daytrader.config import load_config
-from daytrader.models import IndicatorSnapshot, Signal, SignalType
+from daytrader.models import IndicatorSnapshot, Side, Signal
 from daytrader.monitor import Monitor, build_feed, build_strategy
 from daytrader.notifier import build_notifier
 
@@ -27,7 +27,7 @@ def _sample_signal() -> Signal:
     return Signal(
         symbol="7201.T",
         name="日産自動車（通知テスト）",
-        type=SignalType.BUY,
+        side=Side.LONG,
         timestamp=datetime.now().astimezone(),
         strategy_id="vwap_breakout",
         indicators=snap,

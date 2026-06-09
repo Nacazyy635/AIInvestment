@@ -27,6 +27,7 @@ def add_indicators(
       - ma          : 終値の単純移動平均
       - volume_avg  : 出来高の移動平均
       - recent_high : 直近 recent_high_window 本（現バーを含めない）の高値
+      - recent_low  : 直近 recent_high_window 本（現バーを含めない）の安値
     """
     out = df.copy()
 
@@ -38,6 +39,7 @@ def add_indicators(
     out["ma"] = out["close"].rolling(ma_period, min_periods=1).mean()
     out["volume_avg"] = out["volume"].rolling(volume_window, min_periods=1).mean()
 
-    # shift(1) で現バーを除外してから直近高値をとる＝「ブレイク」を正しく判定
+    # shift(1) で現バーを除外してから直近高値/安値をとる＝「ブレイク」を正しく判定
     out["recent_high"] = out["high"].shift(1).rolling(recent_high_window, min_periods=1).max()
+    out["recent_low"] = out["low"].shift(1).rolling(recent_high_window, min_periods=1).min()
     return out

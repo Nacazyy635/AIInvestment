@@ -10,9 +10,10 @@ from datetime import datetime
 from enum import Enum
 
 
-class SignalType(str, Enum):
-    """シグナルの種別。MVPは買いのみ。将来 SELL / SHORT を追加。"""
-    BUY = "BUY"
+class Side(str, Enum):
+    """売買方向。"""
+    LONG = "LONG"     # 買い
+    SHORT = "SHORT"   # 売り（信用・空売り）
 
 
 class ExitReason(str, Enum):
@@ -50,10 +51,10 @@ class IndicatorSnapshot:
 
 @dataclass(frozen=True)
 class Signal:
-    """戦略が検出したエントリー候補。"""
+    """戦略が検出したエントリー候補（買い or 売り）。"""
     symbol: str
     name: str
-    type: SignalType
+    side: Side
     timestamp: datetime
     strategy_id: str
     indicators: IndicatorSnapshot
@@ -61,8 +62,8 @@ class Signal:
 
     @property
     def key(self) -> str:
-        """重複通知を防ぐための一意キー（銘柄＋時刻）。"""
-        return f"{self.symbol}:{self.timestamp.isoformat()}"
+        """重複通知を防ぐための一意キー（銘柄＋方向＋時刻）。"""
+        return f"{self.symbol}:{self.side.value}:{self.timestamp.isoformat()}"
 
 
 @dataclass
@@ -70,11 +71,12 @@ class Position:
     """保有中の建玉（Step2・仮想売買）。"""
     symbol: str
     name: str
+    side: Side
     qty: int
     entry_ts: datetime
-    entry_price: float       # スリッページ反映後の取得単価
-    stop_price: float        # 損切りライン（逆指値）
-    take_price: float        # 利確ライン
+    entry_price: float       # スリッページ反映後の取得/売建単価
+    stop_price: float        # 損切りライン（買い=下/売り=上）
+    take_price: float        # 利確ライン（買い=上/売り=下）
     strategy_id: str
     reason_open: str
 
@@ -89,6 +91,7 @@ class Trade:
     symbol: str
     name: str
     strategy_id: str
+    side: Side
     qty: int
     entry_ts: datetime
     entry_price: float
@@ -100,8 +103,12 @@ class Trade:
 
     @property
     def gross_pnl(self) -> float:
-        """手数料控除前の損益（円）。買い：(決済 - 取得) × 株数。"""
-        return (self.exit_price - self.entry_price) * self.qty
+        """手数料控除前の損益（円）。買いは(決済-取得)、売りは(売建-買戻)。"""
+        if self.side == Side.LONG:
+            diff = self.exit_price - self.entry_price
+        else:
+            diff = self.entry_price - self.exit_price
+        return diff * self.qty
 
     @property
     def pnl(self) -> float:
@@ -110,7 +117,7 @@ class Trade:
 
     @property
     def pnl_pct(self) -> float:
-        """ネット損益率（％、取得代金に対して）。"""
+        """ネット損益率（％、取得/売建代金に対して）。"""
         notional = self.entry_price * self.qty
         if notional == 0:
             return 0.0

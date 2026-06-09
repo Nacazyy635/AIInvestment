@@ -24,7 +24,8 @@ strategy:
     recent_high_window: 20        # 直近20本の高値を更新したらブレイク
     skip_minutes_after_open: 5    # 寄り付き直後（前場9:00・後場12:30）から5分は見送り
     skip_minutes_before_close: 30 # 大引け(15:30)前30分＝15:00以降は新規見送り
-    min_vwap_diff_pct: 0.1        # VWAPを0.1%以上上抜けたら有効（微小なダマシを除外）
+    min_vwap_diff_pct: 0.1        # VWAPを0.1%以上上抜け/下抜けで有効（微小なダマシを除外）
+    allow_short: true             # 空売り(VWAP下抜け+直近安値更新)を許可
     ma_period: 25                 # 移動平均の期間（参考表示用）
     take_profit_pct: 0.8          # 利確 +0.8%
     stop_loss_pct: 0.5            # 損切り -0.5%
@@ -60,5 +61,5 @@ trade:
 
 # 複数日バックテスト（Step2）
 backtest:
-  interval: "5m"   # yfinance制約: 1m=約7日 / 5m・2m=約60日分まで
-  days: 30         # 直近何日分（カレンダー日。≈20営業日）
+  interval: "1m"   # ライブと同じ1分足。yfinanceは1mを約7日分まで取得可
+  days: 7          # 直近何日分（カレンダー日。≈5営業日）

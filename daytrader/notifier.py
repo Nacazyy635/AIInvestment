@@ -1,7 +1,7 @@
 """通知（アダプタ）。
 
 `Notifier` 抽象に対し、Console（開発・フォールバック）と Discord（本番）を実装。
-Discord Webhook URL が無ければ自動でコンソール出力に切り替わる。
+Discord Webhook URL が無ければ自動でコンソール出力に切り替わる。買い/売り両対応。
 """
 from __future__ import annotations
 
@@ -11,19 +11,24 @@ from typing import Optional
 
 import requests
 
-from .models import Signal
+from .models import Side, Signal
 
 logger = logging.getLogger(__name__)
 
-_COLOR_BUY = 0x2ECC71  # 緑（買いシグナル用のembedカラー）
+_COLOR_LONG = 0x2ECC71   # 緑（買い）
+_COLOR_SHORT = 0xE74C3C  # 赤（売り）
+
+
+def _label(side: Side) -> str:
+    return "買い" if side == Side.LONG else "売り"
 
 
 def format_signal(signal: Signal) -> str:
     """シグナルを人が読めるテキストに整形（コンソール用）。"""
     i = signal.indicators
     return (
-        f"🔔 シグナル: {signal.name}（{signal.symbol}）\n"
-        f"種別: {signal.type.value}（買い候補・通知のみ／発注なし）\n"
+        f"🔔 {_label(signal.side)}シグナル: {signal.name}（{signal.symbol}）\n"
+        f"方向: {signal.side.value}（候補・通知のみ／発注なし）\n"
         f"時刻: {signal.timestamp:%Y-%m-%d %H:%M}\n"
         f"価格: {i.price:,.1f}（VWAP {i.vwap:,.1f} / 乖離 {i.vwap_diff_pct:+.2f}%）\n"
         f"出来高: {i.volume:,.0f}（平均比 {i.volume_ratio:.1f}倍）\n"
@@ -33,11 +38,12 @@ def format_signal(signal: Signal) -> str:
 
 
 def build_discord_payload(signal: Signal) -> dict:
-    """Discord Webhook 用の embed ペイロード（見やすい装飾付き表示）。"""
+    """Discord Webhook 用の embed ペイロード（買い=緑 / 売り=赤）。"""
     i = signal.indicators
+    color = _COLOR_LONG if signal.side == Side.LONG else _COLOR_SHORT
     embed = {
-        "title": f"🔔 買いシグナル: {signal.name}（{signal.symbol}）",
-        "color": _COLOR_BUY,
+        "title": f"🔔 {_label(signal.side)}シグナル: {signal.name}（{signal.symbol}）",
+        "color": color,
         "fields": [
             {"name": "価格", "value": f"{i.price:,.1f}", "inline": True},
             {"name": "VWAP乖離", "value": f"{i.vwap_diff_pct:+.2f}%", "inline": True},

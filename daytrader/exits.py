@@ -1,14 +1,14 @@
 """エグジット（決済）ルール。
 
 保有中の建玉について、そのバーで決済すべきかを判定する純粋関数。
-仕様§5.2: 利確 / 損切り / 時間切れ / 大引け強制決済。
+仕様§5.2: 利確 / 損切り / 時間切れ / 大引け強制決済。買い・売りの両方に対応。
 """
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional, Tuple
 
-from .models import ExitReason, Position
+from .models import ExitReason, Position, Side
 
 
 def check_exit(
@@ -24,18 +24,23 @@ def check_exit(
     """決済すべきなら (理由, 約定価格) を返す。不要なら None。
 
     判定順（重要）:
-      1) 損切り（バー安値が逆指値に触れたら約定したとみなす）
-      2) 利確（バー高値が利確値に触れたら約定したとみなす）
-      3) 大引け強制決済（forced_close_ts 以降）
-      4) 時間切れ（保有が time_exit_minutes 以上）
+      1) 損切り  2) 利確  3) 大引け強制決済  4) 時間切れ
 
-    同一バー内で損切り・利確の両方に触れた場合は、どちらが先か不明なので
-    保守的に「損切り」を優先する（バックテストを甘く見積もらないため）。
+    買い建て: 損切り=安値が逆指値以下 / 利確=高値が利確値以上
+    売り建て: 損切り=高値が逆指値以上 / 利確=安値が利確値以下
+    同一バーで損切り・利確の両方に触れた場合は、保守的に「損切り」を優先する。
     """
-    if bar_low <= position.stop_price:
-        return ExitReason.STOP_LOSS, position.stop_price
-    if bar_high >= position.take_price:
-        return ExitReason.TAKE_PROFIT, position.take_price
+    if position.side == Side.LONG:
+        if bar_low <= position.stop_price:
+            return ExitReason.STOP_LOSS, position.stop_price
+        if bar_high >= position.take_price:
+            return ExitReason.TAKE_PROFIT, position.take_price
+    else:  # SHORT
+        if bar_high >= position.stop_price:
+            return ExitReason.STOP_LOSS, position.stop_price
+        if bar_low <= position.take_price:
+            return ExitReason.TAKE_PROFIT, position.take_price
+
     if bar_ts >= forced_close_ts:
         return ExitReason.FORCED_CLOSE, bar_close
     if (bar_ts - position.entry_ts).total_seconds() >= time_exit_minutes * 60:

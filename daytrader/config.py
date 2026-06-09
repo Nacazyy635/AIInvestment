@@ -31,6 +31,7 @@ class StrategyParams(BaseModel):
     skip_minutes_after_open: int = 5       # 寄り付き直後（前場・後場とも）を除外する分数
     skip_minutes_before_close: int = 30    # 大引け前を除外する分数（強制決済までの猶予）
     min_vwap_diff_pct: float = 0.1         # VWAPからの最低乖離率(%)。微小なダマシ上抜けを除外
+    allow_short: bool = True               # 空売り(VWAP下抜け)を許可するか
     ma_period: int = 25
     # --- エグジット（Step2） ---
     take_profit_pct: float = 0.8           # 利確 +0.8%
@@ -74,8 +75,8 @@ class TradeConfig(BaseModel):
 
 class BacktestConfig(BaseModel):
     """複数日バックテストの設定（Step2）。"""
-    interval: str = "5m"   # yfinance制約: 1m≈7日 / 5m・2m≈60日
-    days: int = 30         # 直近何日分（カレンダー日。≈20営業日）
+    interval: str = "1m"   # ライブと同じ1分足。yfinanceは1mを約7日分まで
+    days: int = 7          # 直近何日分（カレンダー日。≈5営業日）
 
 
 class AppConfig(BaseModel):

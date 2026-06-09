@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS trades (
     strategy_id  TEXT,
     mode         TEXT,
     session_date TEXT,
+    side         TEXT,
     qty          INTEGER,
     entry_ts     TEXT,
     entry_price  REAL,
@@ -40,7 +41,14 @@ class Storage:
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(db_path)
         self.conn.executescript(_SCHEMA)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """旧スキーマのDBに不足列を足す簡易マイグレーション。"""
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(trades)")}
+        if "side" not in cols:
+            self.conn.execute("ALTER TABLE trades ADD COLUMN side TEXT")
 
     def save(self, mode: str, trades: List[Trade]) -> None:
         """トレードを保存する。
@@ -58,14 +66,15 @@ class Storage:
         cur.executemany(
             """
             INSERT INTO trades
-                (symbol, name, strategy_id, mode, session_date, qty,
+                (symbol, name, strategy_id, mode, session_date, side, qty,
                  entry_ts, entry_price, exit_ts, exit_price, pnl, pnl_pct,
                  reason_open, reason_close)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
-                    t.symbol, t.name, t.strategy_id, mode, t.entry_ts.date().isoformat(), t.qty,
+                    t.symbol, t.name, t.strategy_id, mode, t.entry_ts.date().isoformat(),
+                    t.side.value, t.qty,
                     t.entry_ts.isoformat(), t.entry_price, t.exit_ts.isoformat(), t.exit_price,
                     t.pnl, t.pnl_pct, t.reason_open, t.reason_close,
                 )

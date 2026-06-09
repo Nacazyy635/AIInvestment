@@ -1,18 +1,19 @@
 """売買戦略（シグナル判定）。
 
-`Strategy` 抽象に対し、MVPの `VwapBreakoutStrategy`（VWAP順張り）を実装。
+`Strategy` 抽象に対し、MVPの `VwapBreakoutStrategy`（VWAP順張り・両建て）を実装。
 戦略を差し替え可能にしておくことで、将来オープニングレンジ・ブレイク等を
 `strategy_id` で追加できる（仕様§5.2）。
 """
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import List
 
 import pandas as pd
 
 from .config import MarketConfig, StrategyParams
 from .indicators import add_indicators
-from .models import IndicatorSnapshot, Signal, SignalType
+from .models import IndicatorSnapshot, Side, Signal
 
 
 def _hhmm_to_min(s: str) -> int:
@@ -35,9 +36,7 @@ def allowed_entry_mask(
 
     除外する時間帯:
       - 寄り付き直後（前場・後場とも開始から skip_open 分）
-        … 板寄せ由来の価格歪み・高ボラ・指標の未成熟（特にVWAP）
       - 引け間際（大引け前 skip_close 分）
-        … 強制決済までに時間が足りず、デイトレとして成立しないため
     """
     mins = pd.Series(index.hour * 60 + index.minute, index=index)
     morning = (mins >= open_min + skip_open) & (mins <= morning_close_min)
@@ -49,22 +48,20 @@ class Strategy(ABC):
     strategy_id: str
 
     @abstractmethod
-    def evaluate(self, symbol: str, name: str, df: pd.DataFrame) -> list[Signal]:
+    def evaluate(self, symbol: str, name: str, df: pd.DataFrame) -> List[Signal]:
         """分足DataFrameを受け取り、当日のエントリー候補を全て返す。"""
         raise NotImplementedError
 
 
 class VwapBreakoutStrategy(Strategy):
-    """VWAP順張り（買いのみ）。仕様§5.2。
+    """VWAP順張り（買い・売りの両建て）。仕様§5.2。
 
-    エントリー条件（すべて満たす）:
-      1) 終値が「VWAP × (1 + min_vwap_diff_pct%)」を上抜け
-         （前バーはしきい値以下 → 現バーが超え。微小なダマシ上抜けを除外）
-      2) 出来高増加（現バー出来高 ≥ volume_factor × 出来高移動平均）
-      3) 直近高値を更新（終値 > 直近 recent_high_window 本の高値）
-      4) 時間帯フィルタ（寄り付き直後・引け間際を除外、前場/後場の両寄りに適用）
+    買い（LONG）エントリー（すべて満たす）:
+      1) 終値が VWAP×(1+min%) を上抜け  2) 出来高増加  3) 直近高値を更新  4) 時間帯OK
+    売り（SHORT）エントリー（買いの鏡像。allow_short のとき）:
+      1) 終値が VWAP×(1-min%) を下抜け  2) 出来高増加  3) 直近安値を更新  4) 時間帯OK
 
-    Step1では検出して通知するのみ（発注しない）。
+    Step1では検出して通知するのみ。Step2のバックテストで仮想売買する。
     """
     strategy_id = "vwap_breakout"
 
@@ -75,7 +72,7 @@ class VwapBreakoutStrategy(Strategy):
         self.m_aopen = _hhmm_to_min(market.afternoon_open)
         self.m_close = _hhmm_to_min(market.close)
 
-    def evaluate(self, symbol: str, name: str, df: pd.DataFrame) -> list[Signal]:
+    def evaluate(self, symbol: str, name: str, df: pd.DataFrame) -> List[Signal]:
         if len(df) < 2:
             return []
 
@@ -86,49 +83,43 @@ class VwapBreakoutStrategy(Strategy):
             recent_high_window=self.p.recent_high_window,
         )
 
-        # 条件1: VWAP×(1+最低乖離) を上抜けた最初のバー（= しきい値クロス）
-        threshold = d["vwap"] * (1.0 + self.p.min_vwap_diff_pct / 100.0)
-        above = d["close"] > threshold
-        crossed_up = above & (~above.shift(1, fill_value=False))
-        # 条件2,3
-        vol_surge = d["volume"] >= self.p.volume_factor * d["volume_avg"]
-        breakout = d["close"] > d["recent_high"]
-        # 条件4: 時間帯
         time_ok = allowed_entry_mask(
             d.index,
-            open_min=self.m_open,
-            morning_close_min=self.m_mclose,
-            afternoon_open_min=self.m_aopen,
-            close_min=self.m_close,
-            skip_open=self.p.skip_minutes_after_open,
-            skip_close=self.p.skip_minutes_before_close,
+            open_min=self.m_open, morning_close_min=self.m_mclose,
+            afternoon_open_min=self.m_aopen, close_min=self.m_close,
+            skip_open=self.p.skip_minutes_after_open, skip_close=self.p.skip_minutes_before_close,
         )
+        vol_surge = d["volume"] >= self.p.volume_factor * d["volume_avg"]
+        margin = self.p.min_vwap_diff_pct / 100.0
 
-        hit = crossed_up & vol_surge & breakout & time_ok
+        # 買い: VWAP×(1+margin) を上抜け＋直近高値更新
+        above = d["close"] > d["vwap"] * (1.0 + margin)
+        long_hit = above & (~above.shift(1, fill_value=False)) & vol_surge & (d["close"] > d["recent_high"]) & time_ok
 
-        signals: list[Signal] = []
+        # 売り: VWAP×(1-margin) を下抜け＋直近安値更新
+        below = d["close"] < d["vwap"] * (1.0 - margin)
+        short_hit = below & (~below.shift(1, fill_value=False)) & vol_surge & (d["close"] < d["recent_low"]) & time_ok
+
+        signals: List[Signal] = self._make(symbol, name, d, long_hit, Side.LONG)
+        if self.p.allow_short:
+            signals += self._make(symbol, name, d, short_hit, Side.SHORT)
+        signals.sort(key=lambda s: s.timestamp)
+        return signals
+
+    def _make(self, symbol: str, name: str, d: pd.DataFrame, hit: pd.Series, side: Side) -> List[Signal]:
+        out: List[Signal] = []
         for ts, row in d[hit].iterrows():
             snap = IndicatorSnapshot(
-                price=float(row["close"]),
-                vwap=float(row["vwap"]),
-                ma=float(row["ma"]),
-                volume=float(row["volume"]),
-                volume_avg=float(row["volume_avg"]),
+                price=float(row["close"]), vwap=float(row["vwap"]), ma=float(row["ma"]),
+                volume=float(row["volume"]), volume_avg=float(row["volume_avg"]),
                 recent_high=float(row["recent_high"]),
             )
-            reason = (
-                f"VWAP上抜け(+{snap.vwap_diff_pct:.2f}%) / "
-                f"出来高{snap.volume_ratio:.1f}倍 / 直近高値更新"
-            )
-            signals.append(
-                Signal(
-                    symbol=symbol,
-                    name=name,
-                    type=SignalType.BUY,
-                    timestamp=ts.to_pydatetime(),
-                    strategy_id=self.strategy_id,
-                    indicators=snap,
-                    reason=reason,
-                )
-            )
-        return signals
+            if side == Side.LONG:
+                reason = f"VWAP上抜け(+{snap.vwap_diff_pct:.2f}%) / 出来高{snap.volume_ratio:.1f}倍 / 直近高値更新"
+            else:
+                reason = f"VWAP下抜け({snap.vwap_diff_pct:.2f}%) / 出来高{snap.volume_ratio:.1f}倍 / 直近安値更新"
+            out.append(Signal(
+                symbol=symbol, name=name, side=side, timestamp=ts.to_pydatetime(),
+                strategy_id=self.strategy_id, indicators=snap, reason=reason,
+            ))
+        return out

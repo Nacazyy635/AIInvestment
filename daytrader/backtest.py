@@ -1,12 +1,12 @@
 """仮想売買バックテスト（Step2）。
 
-最新の数営業日（複数日）の分足を取得し、日ごとにセッションを再生して
-「シグナルで建玉 → エグジット規則で決済」を行い、完結トレードと損益を
+最新の数営業日の分足を取得し、日ごとにセッションを再生して
+「シグナルで建玉（買い/売り）→ エグジット規則で決済」を行い、完結トレードと損益を
 SQLite に記録・集計する。
 
 リアルさのための反映:
   - ポジションは円ベースでサイジング（target_position_yen に近い100株単位）
-  - スリッページを約定価格に反映（買いは高く、売りは安く約定）
+  - スリッページを約定価格に反映（買いは高く/安く、売りはその逆で約定）
   - 手数料（commission_bps）を往復で控除
 
 残る簡易化（次段階）:
@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from collections import Counter, defaultdict
 from datetime import datetime, time
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -25,7 +25,7 @@ from .broker import PaperBroker
 from .config import AppConfig
 from .datafeed import YFinanceFeed
 from .exits import check_exit
-from .models import ExitReason, Position, Trade
+from .models import ExitReason, Position, Side, Signal, Trade
 from .monitor import build_strategy
 from .sizing import position_size
 from .storage import Storage
@@ -55,8 +55,7 @@ class SessionBacktester:
             return []
 
         signals = self.strategy.evaluate(symbol, name, df)
-        sig_ts = {s.timestamp for s in signals}
-        sig_reason = {s.timestamp: s.reason for s in signals}
+        sig_map: Dict[datetime, Signal] = {s.timestamp: s for s in signals}
 
         day = df.index[-1].date()
         fc_min = self.m_close - self.trade.forced_close_buffer_min
@@ -85,33 +84,41 @@ class SessionBacktester:
                 )
                 if res is not None:
                     reason, exit_price = res
-                    exit_fill = exit_price * (1.0 - self.slip)  # 売りは安く約定
+                    # 売りは買い戻し（高く）、買いは売り（安く）で約定
+                    exit_fill = exit_price * (1 + self.slip) if position.side == Side.SHORT else exit_price * (1 - self.slip)
                     commission = self._commission(position.entry_price, exit_fill, position.qty)
-                    trades.append(self.broker.sell(position, exit_fill, pyts, reason.value, commission))
+                    trades.append(self.broker.close(position, exit_fill, pyts, reason.value, commission))
                     position = None
                     round_trips += 1
-                    continue  # 決済した足では新規建てしない
+                    continue
 
             # 2) ノーポジかつ往復上限未満なら、シグナル足で円ベースに建てる
-            if position is None and round_trips < self.trade.max_round_trips_per_symbol and pyts in sig_ts:
+            if position is None and round_trips < self.trade.max_round_trips_per_symbol and pyts in sig_map:
+                sig = sig_map[pyts]
                 raw = float(row["close"])
                 shares = position_size(raw, self.trade.target_position_yen, self.trade.max_position_yen)
                 if shares > 0:
-                    entry_fill = raw * (1.0 + self.slip)  # 買いは高く約定
-                    stop = entry_fill * (1.0 - self.p.stop_loss_pct / 100.0)
-                    take = entry_fill * (1.0 + self.p.take_profit_pct / 100.0)
-                    position = self.broker.buy(
-                        symbol, name, shares, entry_fill, pyts,
-                        self.strategy.strategy_id, stop, take, sig_reason.get(pyts, ""),
+                    if sig.side == Side.LONG:
+                        entry_fill = raw * (1 + self.slip)
+                        stop = entry_fill * (1 - self.p.stop_loss_pct / 100.0)
+                        take = entry_fill * (1 + self.p.take_profit_pct / 100.0)
+                    else:  # SHORT
+                        entry_fill = raw * (1 - self.slip)
+                        stop = entry_fill * (1 + self.p.stop_loss_pct / 100.0)
+                        take = entry_fill * (1 - self.p.take_profit_pct / 100.0)
+                    position = self.broker.open(
+                        sig.side, symbol, name, shares, entry_fill, pyts,
+                        self.strategy.strategy_id, stop, take, sig.reason,
                     )
 
         # 3) 場の終わりまで持ち越したら最終足で強制決済
         if position is not None:
             last_ts = df.index[-1].to_pydatetime()
-            exit_fill = float(df.iloc[-1]["close"]) * (1.0 - self.slip)
+            raw_close = float(df.iloc[-1]["close"])
+            exit_fill = raw_close * (1 + self.slip) if position.side == Side.SHORT else raw_close * (1 - self.slip)
             commission = self._commission(position.entry_price, exit_fill, position.qty)
             trades.append(
-                self.broker.sell(position, exit_fill, last_ts, ExitReason.FORCED_CLOSE.value, commission)
+                self.broker.close(position, exit_fill, last_ts, ExitReason.FORCED_CLOSE.value, commission)
             )
 
         return trades
@@ -136,7 +143,6 @@ def run_backtest(cfg: AppConfig) -> None:
             logger.info("データなし: %s", sym.symbol)
             continue
 
-        # 日ごとに区切って再生（VWAP等は日次でリセットされる）
         sym_trades: List[Trade] = []
         for day, day_df in df.groupby(df.index.date):
             sessions.add(day)
@@ -146,10 +152,8 @@ def run_backtest(cfg: AppConfig) -> None:
         all_trades.extend(sym_trades)
         wins = sum(1 for t in sym_trades if t.pnl > 0)
         pnl = sum(t.pnl for t in sym_trades)
-        avg_qty = int(sum(t.qty for t in sym_trades) / len(sym_trades)) if sym_trades else 0
         logger.info(
-            "%-7s %-8s 取引%3d 勝ち%3d 損益%+10.0f円 (平均%4d株)",
-            sym.symbol, sym.name, len(sym_trades), wins, pnl, avg_qty,
+            "%-7s %-8s 取引%3d 勝ち%3d 損益%+9.0f円", sym.symbol, sym.name, len(sym_trades), wins, pnl,
         )
 
     if all_trades:
@@ -157,6 +161,16 @@ def run_backtest(cfg: AppConfig) -> None:
         logger.info("SQLite保存: %s（%d件, mode=%s）", cfg.trade.db_path, len(all_trades), cfg.trade.mode)
     _print_summary(all_trades, sessions, cfg)
     storage.close()
+
+
+def _side_line(trades: List[Trade], side: Side) -> str:
+    ts = [t for t in trades if t.side == side]
+    if not ts:
+        return f"{'買い' if side == Side.LONG else '売り'} 0件"
+    wins = sum(1 for t in ts if t.pnl > 0)
+    pnl = sum(t.pnl for t in ts)
+    label = "買い" if side == Side.LONG else "売り"
+    return f"{label} {len(ts)}件 勝率{wins / len(ts) * 100:4.1f}% 損益{pnl:+,.0f}円"
 
 
 def _print_summary(trades: List[Trade], sessions, cfg: AppConfig) -> None:
@@ -182,7 +196,7 @@ def _print_summary(trades: List[Trade], sessions, cfg: AppConfig) -> None:
     line = "=" * 62
     print("\n" + line)
     print(f" バックテスト結果   mode={cfg.trade.mode}   1ポジ目安 ¥{cfg.trade.target_position_yen:,}")
-    print(f" 対象 {cfg.backtest.days}日（{len(sessions)}営業日）× {len(cfg.watchlist)}銘柄   足={cfg.backtest.interval}")
+    print(f" 対象 {cfg.backtest.days}日（{len(sessions)}営業日）× {len(cfg.watchlist)}銘柄   足={cfg.backtest.interval}   空売り={'有' if cfg.strategy.params.allow_short else '無'}")
     print(line)
     print(f" 取引数 : {n}")
     print(f" 勝率   : {win_rate:5.1f}%   （勝ち {len(wins)} / 負け {n - len(wins)}）")
@@ -191,6 +205,7 @@ def _print_summary(trades: List[Trade], sessions, cfg: AppConfig) -> None:
     if n:
         pf_str = "∞" if pf == float("inf") else f"{pf:.2f}"
         print(f" PF(総利益/総損失): {pf_str}")
+        print(f" 方向別: {_side_line(trades, Side.LONG)}  /  {_side_line(trades, Side.SHORT)}")
         print(" 決済理由: " + " / ".join(f"{k}={v}" for k, v in reason_ct.most_common()))
     print(line)
     if byday_pnl:
@@ -200,4 +215,4 @@ def _print_summary(trades: List[Trade], sessions, cfg: AppConfig) -> None:
             cum += byday_pnl[d]
             print(f"   {d}  取引{byday_n[d]:2d}  損益{byday_pnl[d]:+8.0f}  累計{cum:+9.0f}")
         print(line)
-    print(f" ※スリッページ{cfg.trade.slippage_bps:.0f}bps/片側を約定価格に反映・手数料{cfg.trade.commission_bps:.0f}bps。5分足。")
+    print(f" ※スリッページ{cfg.trade.slippage_bps:.0f}bps/片側を約定価格に反映・手数料{cfg.trade.commission_bps:.0f}bps。{cfg.backtest.interval}足。")

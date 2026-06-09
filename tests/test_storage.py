@@ -7,15 +7,15 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from daytrader.models import Trade
+from daytrader.models import Side, Trade
 from daytrader.storage import Storage
 
 JST = timezone(timedelta(hours=9))
 
 
-def _trade(symbol: str, day: int, exit_price: float) -> Trade:
+def _trade(symbol: str, day: int, exit_price: float, side: Side = Side.LONG) -> Trade:
     return Trade(
-        symbol=symbol, name=symbol, strategy_id="s", qty=100,
+        symbol=symbol, name=symbol, strategy_id="s", side=side, qty=100,
         entry_ts=datetime(2026, 6, day, 10, 0, tzinfo=JST), entry_price=1000.0,
         exit_ts=datetime(2026, 6, day, 10, 30, tzinfo=JST), exit_price=exit_price,
         reason_open="o", reason_close="TIME_EXIT",
@@ -26,23 +26,23 @@ class TestStorage(unittest.TestCase):
     def test_save_and_replace_by_day(self):
         with tempfile.TemporaryDirectory() as tmp:
             s = Storage(os.path.join(tmp, "t.db"))
-            # 9日に2件・10日に1件
             s.save("PAPER", [_trade("A.T", 9, 1005.0), _trade("B.T", 9, 995.0), _trade("A.T", 10, 1010.0)])
             self.assertEqual(self._count(s), 3)
 
-            # 9日を再保存 → 9日分だけ入れ替わる（10日は残る）
-            s.save("PAPER", [_trade("A.T", 9, 1002.0)])
+            s.save("PAPER", [_trade("A.T", 9, 1002.0)])  # 9日を再保存 → 入れ替え
             self.assertEqual(self._count(s, "2026-06-09"), 1)
             self.assertEqual(self._count(s, "2026-06-10"), 1)
             self.assertEqual(self._count(s), 2)
             s.close()
 
-    def test_pnl_stored(self):
+    def test_long_and_short_pnl(self):
         with tempfile.TemporaryDirectory() as tmp:
             s = Storage(os.path.join(tmp, "t.db"))
-            s.save("PAPER", [_trade("A.T", 9, 1005.0)])  # +5円×100株 = +500
-            pnl = s.conn.execute("SELECT pnl FROM trades").fetchone()[0]
-            self.assertAlmostEqual(pnl, 500.0)
+            # 買い: 1000→1005 = +500 / 売り: 1000→995 = +500（下落で利益）
+            s.save("PAPER", [_trade("A.T", 9, 1005.0, Side.LONG), _trade("B.T", 9, 995.0, Side.SHORT)])
+            rows = dict(s.conn.execute("SELECT side, pnl FROM trades").fetchall())
+            self.assertAlmostEqual(rows["LONG"], 500.0)
+            self.assertAlmostEqual(rows["SHORT"], 500.0)
             s.close()
 
     @staticmethod
