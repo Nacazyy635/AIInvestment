@@ -15,6 +15,14 @@ class SignalType(str, Enum):
     BUY = "BUY"
 
 
+class ExitReason(str, Enum):
+    """決済理由（Step2）。"""
+    TAKE_PROFIT = "TAKE_PROFIT"     # 利確
+    STOP_LOSS = "STOP_LOSS"         # 損切り
+    TIME_EXIT = "TIME_EXIT"         # 時間切れ
+    FORCED_CLOSE = "FORCED_CLOSE"   # 大引け強制決済
+
+
 @dataclass(frozen=True)
 class IndicatorSnapshot:
     """あるバー時点の指標スナップショット（通知・記録用）。"""
@@ -42,7 +50,7 @@ class IndicatorSnapshot:
 
 @dataclass(frozen=True)
 class Signal:
-    """戦略が検出したエントリー候補。Step1では通知のみ（発注しない）。"""
+    """戦略が検出したエントリー候補。"""
     symbol: str
     name: str
     type: SignalType
@@ -55,3 +63,44 @@ class Signal:
     def key(self) -> str:
         """重複通知を防ぐための一意キー（銘柄＋時刻）。"""
         return f"{self.symbol}:{self.timestamp.isoformat()}"
+
+
+@dataclass
+class Position:
+    """保有中の建玉（Step2・仮想売買）。"""
+    symbol: str
+    name: str
+    qty: int
+    entry_ts: datetime
+    entry_price: float
+    stop_price: float        # 損切りライン（逆指値）
+    take_price: float        # 利確ライン
+    strategy_id: str
+    reason_open: str
+
+
+@dataclass(frozen=True)
+class Trade:
+    """完結した1往復のトレード（損益つき）。"""
+    symbol: str
+    name: str
+    strategy_id: str
+    qty: int
+    entry_ts: datetime
+    entry_price: float
+    exit_ts: datetime
+    exit_price: float
+    reason_open: str
+    reason_close: str
+
+    @property
+    def pnl(self) -> float:
+        """損益（円）。買い：(決済 - 取得) × 株数。手数料は未考慮。"""
+        return (self.exit_price - self.entry_price) * self.qty
+
+    @property
+    def pnl_pct(self) -> float:
+        """損益率（％）。"""
+        if self.entry_price == 0:
+            return 0.0
+        return (self.exit_price / self.entry_price - 1.0) * 100.0

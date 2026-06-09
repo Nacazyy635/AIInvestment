@@ -26,6 +26,9 @@ strategy:
     skip_minutes_before_close: 30 # 大引け(15:30)前30分＝15:00以降は新規見送り
     min_vwap_diff_pct: 0.1        # VWAPを0.1%以上上抜けたら有効（微小なダマシを除外）
     ma_period: 25                 # 移動平均の期間（参考表示用）
+    take_profit_pct: 0.8          # 利確 +0.8%
+    stop_loss_pct: 0.5            # 損切り -0.5%
+    time_exit_minutes: 30         # 保有30分で時間切れ
 
 # 東証の取引時間（2024/11/5以降。後場は15:30まで）
 market:
@@ -43,3 +46,11 @@ monitor:
 # 通知（auto=Discord URLがあればDiscord、なければコンソール）
 notify:
   provider: auto
+
+# 仮想売買・約定（Step2）
+trade:
+  mode: PAPER                    # PAPER=仮想 / LIVE=実売買（まだ使わない）
+  quantity: 100                  # 1回の発注株数（単元=100株）
+  max_round_trips_per_symbol: 1  # 同一銘柄は1日1往復まで（現物・差金決済規制）
+  forced_close_buffer_min: 5     # 大引け(15:30)の5分前に強制決済
+  db_path: data/daytrader.db     # SQLite（gitignore対象）

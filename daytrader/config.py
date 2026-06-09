@@ -32,6 +32,10 @@ class StrategyParams(BaseModel):
     skip_minutes_before_close: int = 30    # 大引け前を除外する分数（強制決済までの猶予）
     min_vwap_diff_pct: float = 0.1         # VWAPからの最低乖離率(%)。微小なダマシ上抜けを除外
     ma_period: int = 25
+    # --- エグジット（Step2） ---
+    take_profit_pct: float = 0.8           # 利確 +0.8%
+    stop_loss_pct: float = 0.5             # 損切り -0.5%
+    time_exit_minutes: int = 30            # 保有30分で時間切れ
 
 
 class StrategyConfig(BaseModel):
@@ -56,6 +60,15 @@ class NotifyConfig(BaseModel):
     provider: Literal["auto", "discord", "console"] = "auto"
 
 
+class TradeConfig(BaseModel):
+    """仮想売買・約定の設定（Step2）。"""
+    mode: Literal["PAPER", "LIVE"] = "PAPER"        # 仮想 / 実売買（実売買はまだ使わない）
+    quantity: int = 100                             # 1回の発注株数（単元=100株）
+    max_round_trips_per_symbol: int = 1             # 同一銘柄1日1往復（差金決済規制）
+    forced_close_buffer_min: int = 5                # 大引けの何分前に強制決済するか
+    db_path: str = "data/daytrader.db"              # SQLite（gitignore対象）
+
+
 class AppConfig(BaseModel):
     """アプリ全体の設定。"""
     watchlist: List[SymbolConfig]
@@ -64,6 +77,7 @@ class AppConfig(BaseModel):
     market: MarketConfig = Field(default_factory=MarketConfig)
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
+    trade: TradeConfig = Field(default_factory=TradeConfig)
 
     # .env 由来（設定ファイルには書かない秘密情報）
     discord_webhook_url: Optional[str] = None
