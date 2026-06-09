@@ -15,9 +15,11 @@ from .models import Signal
 
 logger = logging.getLogger(__name__)
 
+_COLOR_BUY = 0x2ECC71  # 緑（買いシグナル用のembedカラー）
+
 
 def format_signal(signal: Signal) -> str:
-    """シグナルを人が読めるテキストに整形（Console/Discord共通）。"""
+    """シグナルを人が読めるテキストに整形（コンソール用）。"""
     i = signal.indicators
     return (
         f"🔔 シグナル: {signal.name}（{signal.symbol}）\n"
@@ -28,6 +30,25 @@ def format_signal(signal: Signal) -> str:
         f"100株コスト: 約¥{i.price * 100:,.0f}\n"
         f"理由: {signal.reason}"
     )
+
+
+def build_discord_payload(signal: Signal) -> dict:
+    """Discord Webhook 用の embed ペイロード（見やすい装飾付き表示）。"""
+    i = signal.indicators
+    embed = {
+        "title": f"🔔 買いシグナル: {signal.name}（{signal.symbol}）",
+        "color": _COLOR_BUY,
+        "fields": [
+            {"name": "価格", "value": f"{i.price:,.1f}", "inline": True},
+            {"name": "VWAP乖離", "value": f"{i.vwap_diff_pct:+.2f}%", "inline": True},
+            {"name": "出来高", "value": f"平均比 {i.volume_ratio:.1f}倍", "inline": True},
+            {"name": "100株コスト", "value": f"約¥{i.price * 100:,.0f}", "inline": True},
+            {"name": "理由", "value": signal.reason, "inline": False},
+        ],
+        "footer": {"text": f"{signal.strategy_id}・通知のみ（発注なし）"},
+        "timestamp": signal.timestamp.isoformat(),
+    }
+    return {"embeds": [embed]}
 
 
 class Notifier(ABC):
@@ -44,7 +65,7 @@ class ConsoleNotifier(Notifier):
 
 
 class DiscordNotifier(Notifier):
-    """Discord Webhook に送信（本番）。"""
+    """Discord Webhook に embed で送信（本番）。"""
 
     def __init__(self, webhook_url: str):
         self.webhook_url = webhook_url
@@ -52,7 +73,7 @@ class DiscordNotifier(Notifier):
     def send(self, signal: Signal) -> None:
         try:
             resp = requests.post(
-                self.webhook_url, json={"content": format_signal(signal)}, timeout=10
+                self.webhook_url, json=build_discord_payload(signal), timeout=10
             )
             resp.raise_for_status()
         except Exception as e:  # 通知失敗で本体を止めない

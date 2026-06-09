@@ -1,23 +1,44 @@
 """起動エントリーポイント（CLI）。
 
-    python run.py            # config.yaml の mode で実行
-    python run.py --mode once
-    python run.py --mode loop
+    python run.py                 # config.yaml の mode で実行
+    python run.py --mode once     # 最新営業日を1回スキャン
+    python run.py --mode loop     # 繰り返し監視
+    python run.py --test-notify   # 通知設定の確認（サンプルを1件送る）
 """
 from __future__ import annotations
 
 import argparse
 import logging
+from datetime import datetime
 
 from daytrader.config import load_config
+from daytrader.models import IndicatorSnapshot, Signal, SignalType
 from daytrader.monitor import Monitor, build_feed, build_strategy
 from daytrader.notifier import build_notifier
+
+
+def _sample_signal() -> Signal:
+    """通知テスト用のダミーシグナル（発注はしない）。"""
+    snap = IndicatorSnapshot(
+        price=336.7, vwap=335.0, ma=334.0,
+        volume=97800, volume_avg=40000, recent_high=336.0,
+    )
+    return Signal(
+        symbol="7201.T",
+        name="日産自動車（通知テスト）",
+        type=SignalType.BUY,
+        timestamp=datetime.now().astimezone(),
+        strategy_id="vwap_breakout",
+        indicators=snap,
+        reason="これは通知テストです（発注なし）",
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="自動デイトレ監視システム (Step1)")
     parser.add_argument("-c", "--config", default="config.yaml", help="設定ファイル")
     parser.add_argument("--mode", choices=["once", "loop"], help="config.yamlのmodeを上書き")
+    parser.add_argument("--test-notify", action="store_true", help="サンプル通知を1件送って設定確認")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -27,12 +48,19 @@ def main() -> None:
     )
 
     cfg = load_config(args.config)
+    notifier = build_notifier(cfg.notify.provider, cfg.discord_webhook_url)
+
+    if args.test_notify:
+        logging.info("通知テストを送信します...")
+        notifier.send(_sample_signal())
+        logging.info("送信完了。Discord設定時は該当チャンネルを確認してください。")
+        return
+
     if args.mode:
         cfg.monitor.mode = args.mode
 
     feed = build_feed(cfg)
     strategy = build_strategy(cfg)
-    notifier = build_notifier(cfg.notify.provider, cfg.discord_webhook_url)
 
     logging.info("戦略: %s", cfg.strategy.name)
     logging.info("監視銘柄: %s", ", ".join(f"{s.name}({s.symbol})" for s in cfg.watchlist))
