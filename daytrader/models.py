@@ -72,7 +72,7 @@ class Position:
     name: str
     qty: int
     entry_ts: datetime
-    entry_price: float
+    entry_price: float       # スリッページ反映後の取得単価
     stop_price: float        # 損切りライン（逆指値）
     take_price: float        # 利確ライン
     strategy_id: str
@@ -81,7 +81,11 @@ class Position:
 
 @dataclass(frozen=True)
 class Trade:
-    """完結した1往復のトレード（損益つき）。"""
+    """完結した1往復のトレード（損益つき）。
+
+    entry_price / exit_price はスリッページ反映後の約定単価。
+    commission は往復の手数料。pnl はそれらを引いた手取り（ネット）損益。
+    """
     symbol: str
     name: str
     strategy_id: str
@@ -92,15 +96,22 @@ class Trade:
     exit_price: float
     reason_open: str
     reason_close: str
+    commission: float = 0.0
 
     @property
-    def pnl(self) -> float:
-        """損益（円）。買い：(決済 - 取得) × 株数。手数料は未考慮。"""
+    def gross_pnl(self) -> float:
+        """手数料控除前の損益（円）。買い：(決済 - 取得) × 株数。"""
         return (self.exit_price - self.entry_price) * self.qty
 
     @property
+    def pnl(self) -> float:
+        """ネット損益（円）＝ 総損益 − 手数料。"""
+        return self.gross_pnl - self.commission
+
+    @property
     def pnl_pct(self) -> float:
-        """損益率（％）。"""
-        if self.entry_price == 0:
+        """ネット損益率（％、取得代金に対して）。"""
+        notional = self.entry_price * self.qty
+        if notional == 0:
             return 0.0
-        return (self.exit_price / self.entry_price - 1.0) * 100.0
+        return self.pnl / notional * 100.0

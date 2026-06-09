@@ -63,9 +63,12 @@ class NotifyConfig(BaseModel):
 class TradeConfig(BaseModel):
     """仮想売買・約定の設定（Step2）。"""
     mode: Literal["PAPER", "LIVE"] = "PAPER"        # 仮想 / 実売買（実売買はまだ使わない）
-    quantity: int = 100                             # 1回の発注株数（単元=100株）
+    target_position_yen: int = 350000               # 1ポジの目安金額（100株単位に丸める）
+    max_position_yen: int = 550000                  # 100株でこれを超える高すぎる銘柄はスキップ
     max_round_trips_per_symbol: int = 1             # 同一銘柄1日1往復（差金決済規制）
     forced_close_buffer_min: int = 5                # 大引けの何分前に強制決済するか
+    slippage_bps: float = 5.0                       # 片側スリッページ(bps)。約定価格に反映
+    commission_bps: float = 0.0                     # 売買手数料(bps)。現物ゼロ革命前提=0、必要なら設定
     db_path: str = "data/daytrader.db"              # SQLite（gitignore対象）
 
 

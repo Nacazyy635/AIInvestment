@@ -22,7 +22,10 @@ class Broker(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def sell(self, position: Position, price: float, ts: datetime, reason_close: str) -> Trade:
+    def sell(
+        self, position: Position, price: float, ts: datetime,
+        reason_close: str, commission: float = 0.0,
+    ) -> Trade:
         raise NotImplementedError
 
 
@@ -44,13 +47,17 @@ class PaperBroker(Broker):
         self.positions[symbol] = pos
         return pos
 
-    def sell(self, position: Position, price: float, ts: datetime, reason_close: str) -> Trade:
+    def sell(
+        self, position: Position, price: float, ts: datetime,
+        reason_close: str, commission: float = 0.0,
+    ) -> Trade:
         self.positions.pop(position.symbol, None)
         return Trade(
             symbol=position.symbol, name=position.name, strategy_id=position.strategy_id,
             qty=position.qty, entry_ts=position.entry_ts, entry_price=position.entry_price,
             exit_ts=ts, exit_price=price,
             reason_open=position.reason_open, reason_close=reason_close,
+            commission=commission,
         )
 
     def get_position(self, symbol: str) -> Optional[Position]:

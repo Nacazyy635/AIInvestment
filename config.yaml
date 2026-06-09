@@ -50,9 +50,12 @@ notify:
 # 仮想売買・約定（Step2）
 trade:
   mode: PAPER                    # PAPER=仮想 / LIVE=実売買（まだ使わない）
-  quantity: 100                  # 1回の発注株数（単元=100株）
+  target_position_yen: 350000    # 1ポジの目安金額（100株単位に丸める）
+  max_position_yen: 550000       # 100株でこれを超える高すぎる銘柄は自動スキップ
   max_round_trips_per_symbol: 1  # 同一銘柄は1日1往復まで（現物・差金決済規制）
   forced_close_buffer_min: 5     # 大引け(15:30)の5分前に強制決済
+  slippage_bps: 5                # 片側スリッページ(bps=0.01%)。約定価格に反映
+  commission_bps: 0              # 売買手数料(bps)。現物ゼロ革命前提=0、必要なら設定
   db_path: data/daytrader.db     # SQLite（gitignore対象）
 
 # 複数日バックテスト（Step2）
