@@ -12,7 +12,7 @@ import time as time_mod
 from .config import AppConfig
 from .datafeed import DataFeed, YFinanceFeed
 from .notifier import Notifier, build_notifier
-from .strategy import Strategy, VwapBreakoutStrategy
+from .strategy import Strategy, make_strategy
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ def build_feed(cfg: AppConfig) -> DataFeed:
 
 
 def build_strategy(cfg: AppConfig) -> Strategy:
-    return VwapBreakoutStrategy(params=cfg.strategy.params, market=cfg.market)
+    return make_strategy(cfg.strategy.name, cfg.strategy.params, cfg.market)
 
 
 class Monitor:

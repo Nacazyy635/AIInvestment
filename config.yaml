@@ -46,17 +46,18 @@ datafeed:
   interval: "1m"        # 1分足
   lookback_days: 2      # 直近2営業日を取得し、最新1営業日でVWAP計算
 
-# 戦略：VWAP順張り（買いのみ）。数値はバックテスト/仮想売買で調整する初期値。
+# 戦略：vwap_breakout(順張り) / vwap_reversion(逆張り) を name で切替。
 strategy:
-  name: vwap_breakout
+  name: vwap_reversion
   params:
     volume_factor: 1.5            # 出来高が直近平均の1.5倍以上で「増加」とみなす
     volume_window: 20             # 出来高移動平均の本数
-    recent_high_window: 20        # 直近20本の高値を更新したらブレイク
+    recent_high_window: 20        # 直近20本の高値/安値（順張りのブレイク判定）
     skip_minutes_after_open: 5    # 寄り付き直後（前場9:00・後場12:30）から5分は見送り
     skip_minutes_before_close: 30 # 大引け(15:30)前30分＝15:00以降は新規見送り
-    min_vwap_diff_pct: 0.1        # VWAPを0.1%以上上抜け/下抜けで有効（微小なダマシを除外）
-    allow_short: false            # 空売り(VWAP下抜け+直近安値更新)を許可
+    min_vwap_diff_pct: 0.1        # 順張り: VWAPを0.1%以上抜けたら有効
+    reversion_dev_pct: 0.3        # 逆張り: VWAPから0.3%以上乖離したら戻りを狙う
+    allow_short: false            # 空売りを許可
     use_trend_filter: true        # 日足トレンドに沿う方向のみ（強い→買い/弱い→売り）
     trend_ma_days: 25             # トレンド判定の日足移動平均（日数）
     ma_period: 25                 # 移動平均の期間（参考表示用）

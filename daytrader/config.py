@@ -30,8 +30,9 @@ class StrategyParams(BaseModel):
     recent_high_window: int = 20
     skip_minutes_after_open: int = 5       # 寄り付き直後（前場・後場とも）を除外する分数
     skip_minutes_before_close: int = 30    # 大引け前を除外する分数（強制決済までの猶予）
-    min_vwap_diff_pct: float = 0.1         # VWAPからの最低乖離率(%)。微小なダマシ上抜けを除外
-    allow_short: bool = True               # 空売り(VWAP下抜け)を許可するか
+    min_vwap_diff_pct: float = 0.1         # 順張り: VWAPからの最低乖離率(%)。微小なダマシを除外
+    reversion_dev_pct: float = 0.3         # 逆張り: この%以上VWAPから乖離したら戻りを狙う
+    allow_short: bool = True               # 空売り(下抜け/戻り売り)を許可するか
     use_trend_filter: bool = True          # 日足トレンドに沿う方向だけ取る（強い→買い/弱い→売り）
     trend_ma_days: int = 25                # トレンド判定の日足移動平均日数
     ma_period: int = 25

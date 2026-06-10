@@ -41,5 +41,24 @@ class TestEntryTimeWindow(unittest.TestCase):
         self.assertEqual(self._mask(["11:45", "12:00"]), [False, False])
 
 
+class TestStrategyFactory(unittest.TestCase):
+    def _make(self, name):
+        from daytrader.config import MarketConfig, StrategyParams
+        from daytrader.strategy import make_strategy
+        return make_strategy(name, StrategyParams(), MarketConfig())
+
+    def test_make_breakout(self):
+        from daytrader.strategy import VwapBreakoutStrategy
+        self.assertIsInstance(self._make("vwap_breakout"), VwapBreakoutStrategy)
+
+    def test_make_reversion(self):
+        from daytrader.strategy import VwapReversionStrategy
+        self.assertIsInstance(self._make("vwap_reversion"), VwapReversionStrategy)
+
+    def test_unknown_defaults_to_breakout(self):
+        from daytrader.strategy import VwapBreakoutStrategy
+        self.assertIsInstance(self._make("nope"), VwapBreakoutStrategy)
+
+
 if __name__ == "__main__":
     unittest.main()
