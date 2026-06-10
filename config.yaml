@@ -3,11 +3,42 @@
 
 # 監視銘柄（低位・高流動・業種分散で選定。実価格はツールが表示）
 watchlist:
+  # 自動車
+  - { symbol: "7203.T", name: "トヨタ自動車" }
   - { symbol: "7201.T", name: "日産自動車" }
-  - { symbol: "8604.T", name: "野村HD" }
-  - { symbol: "9501.T", name: "東京電力HD" }
-  - { symbol: "4385.T", name: "メルカリ" }
+  - { symbol: "7267.T", name: "ホンダ" }
+  - { symbol: "7270.T", name: "SUBARU" }
+  # 電機・IT・半導体
+  - { symbol: "6758.T", name: "ソニーG" }
+  - { symbol: "6501.T", name: "日立" }
+  - { symbol: "6702.T", name: "富士通" }
+  - { symbol: "6723.T", name: "ルネサス" }
+  # 銀行・証券・保険
   - { symbol: "8306.T", name: "三菱UFJ" }
+  - { symbol: "8316.T", name: "三井住友FG" }
+  - { symbol: "8411.T", name: "みずほFG" }
+  - { symbol: "8604.T", name: "野村HD" }
+  - { symbol: "8766.T", name: "東京海上" }
+  # 通信
+  - { symbol: "9432.T", name: "NTT" }
+  - { symbol: "9433.T", name: "KDDI" }
+  - { symbol: "9434.T", name: "ソフトバンク" }
+  # 内需・ネット
+  - { symbol: "4385.T", name: "メルカリ" }
+  - { symbol: "3382.T", name: "セブン&アイ" }
+  - { symbol: "8267.T", name: "イオン" }
+  # 医薬
+  - { symbol: "4502.T", name: "武田薬品" }
+  - { symbol: "4503.T", name: "アステラス" }
+  # 商社・素材・エネルギー
+  - { symbol: "8058.T", name: "三菱商事" }
+  - { symbol: "8031.T", name: "三井物産" }
+  - { symbol: "5401.T", name: "日本製鉄" }
+  - { symbol: "5020.T", name: "ENEOS" }
+  # 機械・電力ガス
+  - { symbol: "6301.T", name: "コマツ" }
+  - { symbol: "9501.T", name: "東京電力HD" }
+  - { symbol: "9531.T", name: "東京ガス" }
 
 # データ取得（Step1はyfinanceの遅延データ。本番でkabuに差し替える）
 datafeed:
